@@ -49,6 +49,43 @@ def calc_confusion_matrix(fact, predict):
     return confusion_matrix
 
 
+def get_classes(probs, d):
+    classes = []
+    for p in probs:
+        if p[0] >= d:
+            classes.append(0)
+        else:
+            classes.append(1)
+    return np.array(classes)
+
+
+def calc_FPR_TPR(probs, fact_class, step):
+    arr_d = np.arange(np.min(probs), np.max(probs) + step, step)
+    arr_fpr = []
+    arr_tpr = []
+    best_d = np.min(probs)
+    min_dist = 2.0
+    for d in arr_d:
+        predicted_classes = get_classes(predicts_prob, d)
+        conf_matrix = calc_confusion_matrix(fact_class, predicted_classes)
+        arr_fpr.append(conf_matrix["FP"] / (conf_matrix["FP"] + conf_matrix["TN"]))
+        arr_tpr.append(conf_matrix["TP"] / (conf_matrix["TP"] + conf_matrix["FN"]))
+        dist = np.sqrt(arr_fpr[-1]**2 + (1 - arr_tpr[-1])**2)
+        if dist < min_dist:
+            best_d = d
+            min_dist = dist
+    arr_fpr.append(0.0)
+    arr_tpr.append(0.0)
+    return np.array(arr_fpr), np.array(arr_tpr), best_d
+
+
+def calc_AUC(x, y):
+    S = 0
+    for i in range(0, len(x) - 1):
+        S += 0.5 * (y[i] + y[i + 1]) * np.abs(x[i + 1] - x[i])
+    return S
+
+
 path = "C:\\Users\\Никита\\Desktop\\Методы проектирования защищенных распределенных систем\\spam.csv"
 
 if __name__ == '__main__':
@@ -83,20 +120,27 @@ if __name__ == '__main__':
           f"FN: {confusion['FN']}\t\t|\tTN: {confusion['TN']}\n")
     TPR = confusion["TP"] / (confusion["TP"] + confusion["FN"])
     FPR = confusion["FP"] / (confusion["FP"] + confusion["TN"])
+
     print(f"Правильная классификация не спама: {TPR * 100: .2f}%\n"
           f"Неправильно классифицированный спам: {FPR * 100: .2f}%   --->   "
-          f"правильно классифицированный спама: {(1 - FPR) * 100: .2f}%\n")
+          f"правильно классифицированный спама: {(1 - FPR) * 100: .2f}%")
+
+    predicts_prob = classificator.predict_proba(test_TF_IDF)
+    arr_FPR, arr_TPR, border = calc_FPR_TPR(predicts_prob, y_test, 1e-4)
+    print(f"Порог классификации: {border:.3f}\n")
+
     AUC_ROC = 0.5 * FPR * TPR + 0.5 * (1 - FPR) * (1 + TPR)  # сумма треугольника и трапеции
+    real_AUC_ROC = calc_AUC(arr_FPR, arr_TPR)
     print(f"Примерная точность классификации: {AUC_ROC * 100:.2f}%")
-    # примерная потому что у нас ROC кривая строится всего по трем точкам
-    # (из-за того, что классификатор уже разделяет данные бинарно, а ROC должен сначала разделить классы по порогу)
+    print(f"Реальная точность классификации: {real_AUC_ROC * 100: .2f}%")
 
     fig = plt.figure(figsize=(7, 7))
     plt.xlim(0, 1)
     plt.ylim(0, 1)
-    plt.plot([0, FPR, 1], [0, TPR, 1], "b-")
-    plt.plot([0, 1], [0, 1], "r-")
-    plt.legend(["ROC кривая", "кривая угадывания"])
+    plt.plot([0, FPR, 1], [0, TPR, 1], "r-")
+    plt.plot(arr_FPR, arr_TPR, "b-")
+    plt.plot([0, 1], [0, 1], c="orange", linestyle="-")
+    plt.legend(["ROC кривая классификатора", "реальная ROC кривая", "кривая угадывания"])
     plt.show()
 
     print("Wow!")
